@@ -2,6 +2,7 @@
 '''
 mavproxy - a MAVLink proxy program
 
+
 Copyright Andrew Tridgell 2011
 Released under the GNU GPL version 3 or later
 
@@ -1629,6 +1630,7 @@ if __name__ == '__main__':
                       default=255, help='MAVLink source system for this GCS')
     parser.add_option("--target-system", dest='TARGET_SYSTEM', type='int',
                       default=1, help='MAVLink target master system')
+    parser.add_option("--color", dest='COLOR', default='normal', help='pick a colour')
     parser.add_option("--target-component", dest='TARGET_COMPONENT', type='int',
                       default=1, help='MAVLink target master component')
     parser.add_option("--logfile", dest="logfile", help="MAVLink master logfile",
@@ -1693,6 +1695,7 @@ Auto-detected serial ports are:
             sys.exit(1)
 
     # container for status information
+    mpstate.status.source_system = opts.SOURCE_SYSTEM
     mpstate.status.target_system = opts.TARGET_SYSTEM
     mpstate.status.target_component = opts.TARGET_COMPONENT
 
@@ -1701,11 +1704,11 @@ Auto-detected serial ports are:
     # open master link
     for mdev in opts.master:
         if mdev.startswith('tcp:'):
-            m = mavutil.mavtcp(mdev[4:])
+            m = mavutil.mavtcp(mdev,source_system=mpstate.status.source_system)
         elif mdev.find(':') != -1:
-            m = mavutil.mavudp(mdev, input=True)
+            m = mavutil.mavudp(mdev, input=True, source_system=mpstate.status.source_system)
         else:
-            m = mavutil.mavserial(mdev, baud=opts.baudrate, autoreconnect=True)
+            m = mavutil.mavserial(mdev, baud=opts.baudrate, autoreconnect=True, source_system=mpstate.status.source_system)
         m.mav.set_callback(master_callback, m)
         m.linknum = len(mpstate.mav_master)
         m.linkerror = False
@@ -1740,7 +1743,29 @@ Auto-detected serial ports are:
         mpstate.override_period = mavutil.periodic_event(1)
     heartbeat_check_period = mavutil.periodic_event(0.33)
 
-    mpstate.rl = rline("MAV> ")
+    codeCodes = {
+	    'black':    '0;30',     'bright gray':  '0;37',
+	    'blue':     '0;34',     'white':        '1;37',
+	    'green':    '0;32',     'bright blue':  '1;34',
+	    'cyan':     '0;36',     'bright green': '1;32',
+       'red':      '0;31',     'bright cyan':  '1;36',
+	    'purple':   '0;35',     'bright red':   '1;31',
+	    'yellow':   '0;33',     'bright purple':'1;35',
+	    'dark gray':'1;30',     'bright yellow':'1;33',
+	    'normal':   '0'
+    }
+	
+    # map system to colors
+    srcsystems = {
+	   255: 'purple',
+	   254: 'green',
+	   1:   'blue',
+	   7:   'red'
+	}
+
+    colorcode = '\033['+codeCodes[opts.COLOR]+'m'
+      
+    mpstate.rl = rline(colorcode + "MAV> ")
     if opts.setup:
         mpstate.rl.set_prompt("")
 
