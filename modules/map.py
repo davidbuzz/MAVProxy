@@ -22,6 +22,7 @@ class module_state(object):
         self.have_blueplane = False
         self.move_wp = -1
         self.moving_wp = False
+        self.brightness = 1
 
 def name():
     '''return module name'''
@@ -30,6 +31,18 @@ def name():
 def description():
     '''return module description'''
     return "map display"
+
+def cmd_map(args):
+    '''map commands'''
+    state = mpstate.map_state
+    if args[0] == "brightness":
+        if len(args) < 2:
+            print("Brightness %.1f" % state.brightness)
+        else:
+            state.brightness = float(args[1])
+            mpstate.map.add_object(mp_slipmap.SlipBrightness(state.brightness))
+    else:
+        print("usage: map <brightness>")
 
 def init(_mpstate):
     '''initialise module'''
@@ -45,12 +58,18 @@ def init(_mpstate):
                                                trail=mp_slipmap.SlipTrail()))
 
     mpstate.map.add_callback(functools.partial(map_callback))
+    mpstate.command_map['map'] = (cmd_map, "map control")
+
 
 def display_waypoints():
     '''display the waypoints'''
-    points = mpstate.status.wploader.polygon()
-    if len(points) > 1:
-        mpstate.map.add_object(mp_slipmap.SlipPolygon('mission', points, layer=1, linewidth=2, colour=(255,255,255)))
+    polygons = mpstate.status.wploader.polygon_list()
+    mpstate.map.add_object(mp_slipmap.SlipClearLayer('Mission'))
+    for i in range(len(polygons)):
+        p = polygons[i]
+        if len(p) > 1:
+            mpstate.map.add_object(mp_slipmap.SlipPolygon('mission%u' % i, p,
+                                                          layer='Mission', linewidth=2, colour=(255,255,255)))
 
 def closest_waypoint(latlon):
     '''find closest waypoint to a position'''
@@ -85,12 +104,14 @@ def map_callback(obj):
                 state.moving_wp = True
                 state.move_wp = wpnum
                 wp = mpstate.status.wploader.wp(state.move_wp)
-                print("Selected WP %u" % wpnum)
+                print("Selected WP %u : %s" % (wpnum, getattr(wp,'comment','')))
         else:
             wp = mpstate.status.wploader.wp(state.move_wp)
             (lat, lon) = obj.latlon
             wp.x = lat
             wp.y = lon
+            wp.target_system    = mpstate.status.target_system
+            wp.target_component = mpstate.status.target_component
             state.moving_wp = False
             mpstate.status.loading_waypoints = True
             mpstate.status.loading_waypoint_lasttime = time.time()
@@ -132,12 +153,23 @@ def mavlink_packet(m):
             create_blueplane()
             mpstate.map.set_position('blueplane', (lat, lon), rotation=m.cog*0.01)
 
+    if m.get_type() == "NAV_CONTROLLER_OUTPUT":
+        if mpstate.master().flightmode == "AUTO":
+            trajectory = [ (state.lat, state.lon),
+                           mp_util.gps_newpos(state.lat, state.lon, m.target_bearing, m.wp_dist) ]
+            mpstate.map.add_object(mp_slipmap.SlipPolygon('trajectory', trajectory, layer='Trajectory',
+                                                          linewidth=2, colour=(255,0,180)))
+        else:
+            mpstate.map.add_object(mp_slipmap.SlipClearLayer('Trajectory'))
+
+        
     if m.get_type() == 'GLOBAL_POSITION_INT':
         (state.lat, state.lon, state.heading) = (m.lat*1.0e-7, m.lon*1.0e-7, m.hdg*0.01)
     else:
         return
 
-    mpstate.map.set_position('plane', (state.lat, state.lon), rotation=state.heading)
+    if state.lat != 0 or state.lon != 0:
+        mpstate.map.set_position('plane', (state.lat, state.lon), rotation=state.heading)
 
     # if the waypoints have changed, redisplay
     if state.wp_change_time != mpstate.status.wploader.last_change:
