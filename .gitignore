@@ -1,10 +1,12 @@
-mavproxy
 *~
 *.o
 *.pyc
 *.log
 camera/
+build/
+dist/
+gtest/
+*.tlog
 *.raw
-*.parm
-*.scr
-status.txt
+MANIFEST
+*.egg-info
